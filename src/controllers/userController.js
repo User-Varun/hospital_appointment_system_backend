@@ -1,7 +1,32 @@
 const User = require("../models/userModel");
 const jwt = require("jsonwebtoken");
 
-exports.registerUser = async (req, res) => {
+const buildAuthResponse = (user, token) => ({
+  success: true,
+  token,
+  data: {
+    _id: user._id,
+    name: user.name,
+    username: user.username,
+    role: user.role,
+    specialty: user.specialty,
+  },
+});
+
+const createToken = (user) => {
+  const jwtSecret = process.env.JWT_SECRET || "dev-secret";
+  return jwt.sign(
+    {
+      id: user._id,
+      username: user.username,
+      role: user.role,
+    },
+    jwtSecret,
+    { expiresIn: "1d" },
+  );
+};
+
+const signupUser = async (req, res) => {
   try {
     const { name, username, password, role, specialty } = req.body;
 
@@ -37,26 +62,19 @@ exports.registerUser = async (req, res) => {
       specialty,
     });
 
-    return res.status(201).json({
-      success: true,
-      data: {
-        _id: user._id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        specialty: user.specialty,
-      },
-    });
+    const token = createToken(user);
+
+    return res.status(201).json(buildAuthResponse(user, token));
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "failed to register user",
+      message: "failed to sign up user",
       error: error.message,
     });
   }
 };
 
-exports.authenticateUser = async (req, res) => {
+const loginUser = async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -68,43 +86,29 @@ exports.authenticateUser = async (req, res) => {
     }
 
     const user = await User.findOne({ username: username.toLowerCase() });
-    if (!user || user.password !== password) {
+    const isPasswordValid = user ? await user.matchPassword(password) : false;
+    if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
         message: "invalid credentials",
       });
     }
 
-    const jwtSecret = process.env.JWT_SECRET || "dev-secret";
-    const token = jwt.sign(
-      {
-        id: user._id,
-        username: user.username,
-        role: user.role,
-      },
-      jwtSecret,
-      { expiresIn: "1d" },
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: "authenticated",
-      token,
-      data: {
-        _id: user._id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-      },
-    });
+    const token = createToken(user);
+    return res.status(200).json(buildAuthResponse(user, token));
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "failed to authenticate user",
+      message: "failed to login user",
       error: error.message,
     });
   }
 };
+
+exports.signupUser = signupUser;
+exports.loginUser = loginUser;
+exports.registerUser = signupUser;
+exports.authenticateUser = loginUser;
 
 exports.getAllUsers = async (_req, res) => {
   try {
